@@ -1,0 +1,49 @@
+#!/usr/bin/perl
+##########################################################################
+# Logwatch script for restic rest-server (messages of the server itself).
+#
+# Reported at every detail level: failed logins (per user), TLS handshake
+# errors (per reason), and anything not known as normal.
+# Detail 5 (Med): also the server starts and clean shutdowns.
+##########################################################################
+use strict;
+use warnings;
+
+my $Detail = $ENV{'LOGWATCH_DETAIL_LEVEL'} || 0;
+
+my (%AuthFail, %Tls, %Other);
+my ($Started, $Stopped) = (0, 0);
+
+while (defined(my $line = <STDIN>)) {
+   chomp $line;
+   next if $line =~ /^\s*$/;
+
+   if ($line =~ /^Invalid htpasswd entry for (\S+?)\.?$/) { $AuthFail{$1}++; next; }
+   if ($line =~ /^(?:\d{4}\/\d\d\/\d\d \d\d:\d\d:\d\d )?http: TLS handshake error from (?:\[?[0-9a-fA-F:.]+\]?):\d+: (.*)$/) { $Tls{$1}++; next; }
+   if ($line =~ /^start server on /) { $Started++; next; }
+   if ($line =~ /^shutdown cleanly/) { $Stopped++; next; }
+   next if $line =~ /^(Data directory:|Authentication enabled|Authentication disabled|Private repositories enabled|Append only mode enabled|TLS enabled|Loaded htpasswd file|Group accessible|Group-accessible|Using htpasswd|Quota|Max size)/;
+
+   $Other{$line}++;
+}
+
+sub report {
+   my ($title, $h) = @_;
+   return unless %$h;
+   print "\n$title:\n";
+   foreach my $k (sort keys %$h) {
+      print "   $k: $h->{$k} Time(s)\n";
+   }
+}
+
+report("Failed logins (user)", \%AuthFail);
+report("TLS handshake errors", \%Tls);
+report("Unmatched entries", \%Other);
+
+if ($Detail >= 5 and ($Started or $Stopped)) {
+   print "\nServer:\n";
+   print "   started: $Started Time(s)\n" if $Started;
+   print "   clean shutdowns: $Stopped Time(s)\n" if $Stopped;
+}
+
+exit(0);

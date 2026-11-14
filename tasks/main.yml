@@ -1,9 +1,20 @@
 ---
 # vim:ff=unix ts=2 sw=2 ai expandtab
 # code: language=ansible
-- name: Install the logwatch packages 
-  ansible.builtin.package: 
-    name: logwatch 
+# The logwatch package depends on a mail transport agent. Without one apt picks the
+# distribution default (exim4 on Debian). Install the wanted one first.
+- name: Install the mail transport agent
+  ansible.builtin.package:
+    name: "{{ logwatch_mta }}"
+    state: present
+  when: logwatch_mta | length > 0
+  tags:
+    - logwatch
+    - logwatch-package
+
+- name: Install the logwatch packages
+  ansible.builtin.package:
+    name: "{{ logwatch_packages }}"
     state: present
   tags: 
     - logwatch
@@ -14,5 +25,75 @@
     src: logwatch.conf.j2 
     dest: /etc/logwatch/conf/logwatch.conf
   tags: 
+    - logwatch
+    - logwatch-config
+
+- name: Create logwatch service directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/logwatch/conf/services
+    - /etc/logwatch/conf/logfiles
+    - /etc/logwatch/scripts/services
+  when: >-
+    logwatch_custom_services | length > 0 or logwatch_service_conf | length > 0
+    or logwatch_logfile_conf | length > 0
+  tags:
+    - logwatch
+    - logwatch-config
+
+- name: Install bundled custom service configuration
+  ansible.builtin.copy:
+    src: "services/{{ item }}/{{ item }}.conf"
+    dest: "/etc/logwatch/conf/services/{{ item }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ logwatch_custom_services }}"
+  tags:
+    - logwatch
+    - logwatch-config
+
+- name: Install bundled custom service scripts
+  ansible.builtin.copy:
+    src: "services/{{ item }}/{{ item }}"
+    dest: "/etc/logwatch/scripts/services/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ logwatch_custom_services }}"
+  tags:
+    - logwatch
+    - logwatch-config
+
+- name: Configure service overrides
+  ansible.builtin.template:
+    src: service.conf.j2
+    dest: "/etc/logwatch/conf/services/{{ item.key }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ logwatch_service_conf | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags:
+    - logwatch
+    - logwatch-config
+
+- name: Configure log file groups
+  ansible.builtin.template:
+    src: service.conf.j2
+    dest: "/etc/logwatch/conf/logfiles/{{ item.key }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ logwatch_logfile_conf | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags:
     - logwatch
     - logwatch-config

@@ -1,0 +1,89 @@
+#!/usr/bin/perl
+##########################################################################
+# Logwatch script for restic. Generic: it only knows the messages of restic
+# itself (backup, check, forget/prune, copy, init), not how it is started.
+#
+# Detail 0 (Low): errors, fatal messages, warnings and anything unknown.
+# Detail 5 (Med): also counts of successful runs (snapshots saved, check ok,
+#                 snapshots removed).
+##########################################################################
+use strict;
+use warnings;
+
+my $Detail = $ENV{'LOGWATCH_DETAIL_LEVEL'} || 0;
+
+my (%Fatal, %Error, %Warning, %Other);
+my ($CheckOk, $Saved, $Removed, $Copied, $Locked) = (0, 0, 0, 0, 0);
+
+while (defined(my $line = <STDIN>)) {
+   chomp $line;
+   next if $line =~ /^\s*$/;
+   # restic output with progress is prefixed by an erase-line escape sequence
+   $line =~ s/\e\[[0-9;]*[A-Za-z]//g;
+   $line =~ s/#033\[[0-9;]*[A-Za-z]//g;       # rsyslog escapes ESC as #033
+
+   # --- successful runs
+   if ($line =~ /^no errors were found$/) { $CheckOk++; next; }
+   if ($line =~ /^snapshot [0-9a-f]+ saved$/) { $Saved++; next; }
+   if ($line =~ /^remove (\d+) snapshots?:/ or $line =~ /^removed (\d+) snapshots?/) { $Removed += $1; next; }
+   if ($line =~ /^snapshot [0-9a-f]+ saved$/ or $line =~ /^Added to the repository:/) { next; }
+   if ($line =~ /^snapshot [0-9a-f]+ of .* (already exists|copied)/) { $Copied++ if $line =~ /copied/; next; }
+
+   # --- problems
+   if ($line =~ /^Fatal: (.*)$/) { $Fatal{normalize($1)}++; next; }
+   if ($line =~ /^(?:Warning|warning): (.*)$/) { $Warning{normalize($1)}++; next; }
+   if ($line =~ /^(?:error|Error|ERROR)[: ]\s*(.*)$/ or $line =~ /^error for tree /) { $Error{normalize($line)}++; next; }
+   if ($line =~ /^\s*\w+\(<[^>]*>\) failed: / or $line =~ /ciphertext verification failed|^pack \S+ contains \d+ errors/) { $Error{normalize($line)}++; next; }
+   if ($line =~ /unable to create lock|repository is already locked|lock is stale/i) { $Locked++; $Error{normalize($line)}++; next; }
+
+   if ($line =~ /^(?:\w+\(<[^>]*>\) returned error|returned error), retrying after [0-9.a-z]+: (.*)$/) { $Warning{"backend error, retrying: " . normalize($1)}++; next; }
+   if ($line =~ /^signal (\w+) received/) { $Warning{normalize($line)}++; next; }
+
+   # --- known harmless progress and continuation lines
+   next if $line =~ /^using (temporary )?cache/;
+   next if $line =~ /^(load indexes|check all packs|check snapshots, trees and blobs|enter password|repository .* opened|created restic repository|no parent snapshot found|open repository|lock repository|unlock|Applying Policy|keep \d+ snapshots?|snapshots for|Reading .*|find data that is still in use|collecting packs|\[\d+:\d+\])/;
+   next if $line =~ /^(loading (indexes|all snapshots)\.\.\.|finding data that is still in use|searching used packs\.\.\.|collecting packs for deletion and repacking|repacking packs|rebuilding index|deleting unreferenced packs|removing \d+ old|done|read all data|create exclusive lock|found \d+ old cache|to (repack|delete):|this removes:|total prune:|remaining:|unused size after prune:|\[\d+:\d+\])/;
+   next if $line =~ /^(keep|remove) \d+ snapshots?:/;
+   next if $line =~ /^(daily|weekly|monthly|yearly|last|hourly|within) snapshot\s*$/ or $line =~ /^\s+(daily|weekly|monthly|yearly|last|hourly|within)/;
+   next if $line =~ /^(Damaged pack files|The repository contains damaged pack files|restic repair |Please read the troubleshooting|unable to remove snapshot)/;
+   next if $line =~ /^read \d+(\.\d+)?% of data packs/;
+   next if $line =~ /^Is there a repository at the following location\?$/;
+   next if $line =~ m{^(rest:|sftp:|s3:|/)\S*$};      # location line after a fatal message
+   next if $line =~ /^(ID|-{3,}|\d+ snapshots?)\s*/;   # table output
+   next if $line =~ /^Files:\s|^Dirs:\s|^processed \d+ files/;
+   next if $line =~ /^\s*[0-9a-f]{8}\s/;               # snapshot table rows
+
+   $Other{normalize($line)}++;
+}
+
+sub normalize {
+   my ($t) = @_;
+   $t =~ s/restic-check-cache-\d+/restic-check-cache-N/g;
+   $t =~ s/\b[0-9a-f]{64}\b/<id>/g;
+   $t =~ s/\b[0-9a-f]{8}\b/<id>/g;
+   return $t;
+}
+
+sub report {
+   my ($title, $h) = @_;
+   return unless %$h;
+   print "\n$title:\n";
+   foreach my $k (sort keys %$h) {
+      print "   $k: $h->{$k} Time(s)\n";
+   }
+}
+
+report("Fatal errors", \%Fatal);
+report("Errors", \%Error);
+report("Warnings", \%Warning);
+report("Unmatched entries", \%Other);
+
+if ($Detail >= 5) {
+   print "\nSuccessful runs:\n" if ($CheckOk or $Saved or $Removed or $Copied);
+   print "   check without errors: $CheckOk Time(s)\n" if $CheckOk;
+   print "   snapshots saved: $Saved\n" if $Saved;
+   print "   snapshots removed: $Removed\n" if $Removed;
+   print "   snapshots copied: $Copied\n" if $Copied;
+}
+
+exit(0);

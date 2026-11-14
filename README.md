@@ -26,6 +26,25 @@ Alternative you can install it by downloading it from github.
 Role Variables
 --------------
 
+    # Mail transport agent package (e.g. postfix) installed before logwatch, so that
+    # apt does not pull in the distribution default (exim4 on Debian). Empty: do
+    # nothing. Only installed, not configured by this role.
+    logwatch_mta: ''
+
+    # Bundled custom services to install (restic, restic-rest-server), see "Custom services"
+    logwatch_custom_services: []
+
+    # Per-service configuration overrides, written to /etc/logwatch/conf/services/<name>.conf
+    # (each value is a list of lines), e.g. systemd: ['LogFile = syslog']
+    logwatch_service_conf: {}
+
+    # Per-logfile-group overrides, written to /etc/logwatch/conf/logfiles/<name>.conf
+    # (each value is a list of lines), e.g. kernel from the journal, see "Custom services"
+    logwatch_logfile_conf: {}
+
+    # Packages to install; add rsyslog on nodes that only have the journal
+    logwatch_packages: [logwatch]
+
     # default is root
     logwatch_mail_to: 'root'
 
@@ -65,6 +84,37 @@ Role Variables
     #Inhibits additional name lookups, displaying IP addresses numerically.
     logwatch_numeric: 'No'
 
+
+Custom services
+---------------
+
+Logwatch has no parser for restic. The role bundles generic services (only the messages of the
+tools themselves, not how they are started); enable them with `logwatch_custom_services`:
+
+| Name | Reads | Reports |
+|------|-------|---------|
+| `restic` | syslog tag `restic` | fatal errors, errors, warnings (e.g. repository missing, wrong password, 401/403 from a rest-server, damaged packs, retries), unknown lines; at detail 5 also counts of checks without errors, snapshots saved, removed, copied. Normal output of backup, check, forget/prune and copy is silent |
+| `restic-rest-server` | syslog tag `restic-rest-server` | failed logins per user, TLS handshake errors per reason, unknown lines; at detail 5 starts and clean shutdowns |
+
+A failed systemd unit (also a restic one) is reported by the stock `systemd` service. On Debian
+that service reads the log group `messages` (`/var/log/messages`), which rsyslog does not write.
+Point it to syslog with `logwatch_service_conf`:
+
+    logwatch_custom_services: [restic, restic-rest-server]
+    logwatch_service_conf:
+      systemd: ['LogFile = syslog']
+
+Debian trixie has only the journal. Add rsyslog to `logwatch_packages` so that `/var/log/syslog`
+and `auth.log` exist. Kernel messages written after boot (OOM, disk errors) do not reach
+`kern.log` through rsyslog on a VM, so let the `kernel` log group read the journal instead
+(`*JournalCtl` of the shared logwatch script):
+
+    logwatch_logfile_conf:
+      kernel:
+        - 'LogFile ='
+        - 'LogFile = /dev/null'
+        - '*JournalCtl = "--no-pager --output=short --dmesg"'
+        - '*ApplyStdDate'
 
 Example Playbook
 ----------------
