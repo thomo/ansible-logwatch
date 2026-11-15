@@ -71,3 +71,13 @@ logwatch_service_conf: {}
 #       - '*JournalCtl = "--no-pager --output=short --dmesg"'
 #       - '*ApplyStdDate'
 logwatch_logfile_conf: {}
+
+# Regular expressions for report lines that are dropped from every service (written to
+# /etc/logwatch/conf/ignore.conf). They match the lines of the finished report, e.g.
+# "Reload requested from client PID 123 ...: 1 Time(s)", not the raw log lines. Never add an
+# empty entry, it would match every line. Single quotes in YAML keep the backslashes.
+logwatch_ignore: []
+
+# Yes: do not print the "N Ignored Lines" footer of the services whose lines are dropped by
+# logwatch_ignore. Empty: logwatch default (print it).
+logwatch_suppress_ignores: ''

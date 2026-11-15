@@ -97,3 +97,15 @@
   tags:
     - logwatch
     - logwatch-config
+
+- name: Configure ignored report lines
+  ansible.builtin.template:
+    src: ignore.conf.j2
+    dest: /etc/logwatch/conf/ignore.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: logwatch_ignore | length > 0
+  tags:
+    - logwatch
+    - logwatch-config

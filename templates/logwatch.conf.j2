@@ -57,3 +57,7 @@ Html_wrap = {{ logwatch_html_wrap }}
 {% if logwatch_numeric %}
 Numeric = {{ logwatch_numeric }}
 {% endif %}
+
+{% if logwatch_suppress_ignores %}
+Suppress_Ignores = {{ logwatch_suppress_ignores }}
+{% endif %}

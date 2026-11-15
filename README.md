@@ -42,6 +42,13 @@ Role Variables
     # (each value is a list of lines), e.g. kernel from the journal, see "Custom services"
     logwatch_logfile_conf: {}
 
+    # Regular expressions for report lines that are dropped from every service
+    # (/etc/logwatch/conf/ignore.conf), see "Ignoring report lines"
+    logwatch_ignore: []
+
+    # Yes: no "N Ignored Lines" footer for services whose lines are dropped by logwatch_ignore
+    logwatch_suppress_ignores: ''
+
     # Packages to install; add rsyslog on nodes that only have the journal
     logwatch_packages: [logwatch]
 
@@ -115,6 +122,23 @@ and `auth.log` exist. Kernel messages written after boot (OOM, disk errors) do n
         - 'LogFile = /dev/null'
         - '*JournalCtl = "--no-pager --output=short --dmesg"'
         - '*ApplyStdDate'
+
+Ignoring report lines
+---------------------
+
+`logwatch_ignore` is a list of regular expressions. A line of the finished report that matches one of
+them is dropped, in every service. The expressions match the report line (for example
+`Reload requested from client PID 123 ('systemctl') (unit session-1.scope)...: 1 Time(s)`), not the
+raw log line. Never use an empty entry, it matches everything. Use single quotes in YAML:
+
+    logwatch_ignore:
+      - 'Reload requested from client PID \d+ \(''[^'']*''\)'
+
+A service, for example the stock `postfix` summary, can be switched off with `logwatch_disabled_services`.
+The stock `zz-disk_space` service reports only filesystems above a threshold with:
+
+    logwatch_service_conf:
+      zz-disk_space: ['$suppress_listing = 1', '$diskfull_threshold = 80']
 
 Example Playbook
 ----------------

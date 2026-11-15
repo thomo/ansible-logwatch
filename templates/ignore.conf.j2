@@ -1,0 +1,8 @@
+#
+# {{ ansible_managed }}
+# !!! DO NOT EDIT BY HAND !!!
+# To modify: change configuration in Ansible role '{{ role_path | basename }}'
+#
+{% for pattern in logwatch_ignore %}
+{{ pattern }}
+{% endfor %}
