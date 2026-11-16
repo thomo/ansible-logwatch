@@ -35,6 +35,9 @@ while (defined(my $line = <STDIN>)) {
    if ($line =~ /^(?:error|Error|ERROR)[: ]\s*(.*)$/ or $line =~ /^error for tree /) { $Error{normalize($line)}++; next; }
    if ($line =~ /^\s*\w+\(<[^>]*>\) failed: / or $line =~ /ciphertext verification failed|^pack \S+ contains \d+ errors/) { $Error{normalize($line)}++; next; }
    if ($line =~ /unable to create lock|repository is already locked|lock is stale/i) { $Locked++; $Error{normalize($line)}++; next; }
+   if ($line =~ /^repo already locked, waiting up to/) { $Warning{$line}++; next; }
+   # continuation lines of the lock error (age of the lock, storage id, hint)
+   next if $line =~ /^lock was created at |^storage ID |^the `unlock` command can be used/;
 
    if ($line =~ /^(?:\w+\(<[^>]*>\) returned error|returned error), retrying after [0-9.a-z]+: (.*)$/) { $Warning{"backend error, retrying: " . normalize($1)}++; next; }
    if ($line =~ /^signal (\w+) received/) { $Warning{normalize($line)}++; next; }
@@ -44,11 +47,11 @@ while (defined(my $line = <STDIN>)) {
    next if $line =~ /^(load indexes|check all packs|check snapshots, trees and blobs|enter password|repository .* opened|created restic repository|no parent snapshot found|open repository|lock repository|unlock|Applying Policy|keep \d+ snapshots?|snapshots for|Reading .*|find data that is still in use|collecting packs|\[\d+:\d+\])/;
    next if $line =~ /^(loading (indexes|all snapshots)\.\.\.|finding data that is still in use|searching used packs\.\.\.|collecting packs for deletion and repacking|repacking packs|rebuilding index|deleting unreferenced packs|removing \d+ old|done|read all data|create exclusive lock|found \d+ old cache|to (repack|delete):|this removes:|total prune:|remaining:|unused size after prune:|\[\d+:\d+\])/;
    next if $line =~ /^(keep|remove) \d+ snapshots?:/;
-   next if $line =~ /^(daily|weekly|monthly|yearly|last|hourly|within) snapshot\s*$/ or $line =~ /^\s+(daily|weekly|monthly|yearly|last|hourly|within)/;
+   next if $line =~ /^\s*(?:oldest\s+)?(?:daily|weekly|monthly|yearly|last|hourly|within\s+\S+)\s+snapshot(?:\s+\S.*)?$/ or $line =~ /^\s+(daily|weekly|monthly|yearly|last|hourly|within)/;
    next if $line =~ /^(Damaged pack files|The repository contains damaged pack files|restic repair |Please read the troubleshooting|unable to remove snapshot)/;
    next if $line =~ /^read \d+(\.\d+)?% of data packs/;
    next if $line =~ /^Is there a repository at the following location\?$/;
-   next if $line =~ m{^(rest:|sftp:|s3:|/)\S*$};      # location line after a fatal message
+   next if $line =~ m{^\s*(rest:|sftp:|s3:|/)\S*\s*$};   # location line after a fatal message, path column of the forget table
    next if $line =~ /^(ID|-{3,}|\d+ snapshots?)\s*/;   # table output
    next if $line =~ /^Files:\s|^Dirs:\s|^processed \d+ files/;
    next if $line =~ /^\s*[0-9a-f]{8}\s/;               # snapshot table rows
